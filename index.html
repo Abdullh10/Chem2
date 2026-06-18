@@ -1,1 +1,297 @@
--
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تصريح خروج الطلاب - حصة الكيمياء</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Tahoma", "Segoe UI", sans-serif;
+    background: #f4f6f8;
+    margin: 0;
+    padding: 20px;
+    color: #222;
+  }
+  h1 {
+    text-align: center;
+    color: #1a5d3a;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    text-align: center;
+    color: #666;
+    margin-bottom: 24px;
+  }
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 18px 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  }
+  .card h2 {
+    margin-top: 0;
+    font-size: 18px;
+    color: #1a5d3a;
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 8px;
+  }
+  form.exit-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  form.exit-form input, form.exit-form select {
+    padding: 8px 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 15px;
+  }
+  form.exit-form input[type="text"] {
+    flex: 1;
+    min-width: 160px;
+  }
+  button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: bold;
+  }
+  .btn-out { background: #d9534f; color: #fff; }
+  .btn-out:hover { background: #c9302c; }
+  .btn-in { background: #5cb85c; color: #fff; }
+  .btn-in:hover { background: #4cae4c; }
+  .btn-secondary { background: #e0e0e0; color: #333; }
+  .btn-secondary:hover { background: #cfcfcf; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: right;
+    padding: 8px 10px;
+    border-bottom: 1px solid #eee;
+  }
+  th { color: #555; }
+  tr:hover td { background: #fafafa; }
+  .empty-msg {
+    color: #999;
+    text-align: center;
+    padding: 12px 0;
+  }
+  .duration { color: #1a5d3a; font-weight: bold; }
+  .overdue { color: #d9534f; font-weight: bold; }
+  .actions-row { display: flex; justify-content: flex-end; gap: 10px; }
+</style>
+</head>
+<body>
+
+<h1>تصريح خروج الطلاب</h1>
+<div class="subtitle">حصة الكيمياء - تسجيل الخروج والعودة من الصف</div>
+
+<div class="container">
+
+  <div class="card">
+    <h2>تسجيل خروج طالب</h2>
+    <form class="exit-form" id="exitForm">
+      <input type="text" id="studentName" placeholder="اسم الطالب" required>
+      <select id="exitReason">
+        <option value="حمام">حمام</option>
+        <option value="ممرضة">ممرضة</option>
+        <option value="إدارة">إدارة</option>
+        <option value="أخرى">أخرى</option>
+      </select>
+      <button type="submit" class="btn-out">تسجيل خروج</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>الطلاب الخارجون حالياً</h2>
+    <table id="currentTable">
+      <thead>
+        <tr>
+          <th>الطالب</th>
+          <th>السبب</th>
+          <th>وقت الخروج</th>
+          <th>المدة</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="currentBody"></tbody>
+    </table>
+    <div class="empty-msg" id="currentEmpty">لا يوجد طلاب خارج الصف حالياً</div>
+  </div>
+
+  <div class="card">
+    <h2>سجل الخروج والعودة</h2>
+    <div class="actions-row">
+      <button class="btn-secondary" id="exportBtn">تصدير CSV</button>
+      <button class="btn-secondary" id="clearBtn">مسح السجل</button>
+    </div>
+    <table id="historyTable">
+      <thead>
+        <tr>
+          <th>الطالب</th>
+          <th>السبب</th>
+          <th>وقت الخروج</th>
+          <th>وقت العودة</th>
+          <th>المدة</th>
+        </tr>
+      </thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+    <div class="empty-msg" id="historyEmpty">لا يوجد سجل سابق</div>
+  </div>
+
+</div>
+
+<script>
+const STORAGE_CURRENT = 'hallpass_current';
+const STORAGE_HISTORY = 'hallpass_history';
+const OVERDUE_MINUTES = 10;
+
+let current = JSON.parse(localStorage.getItem(STORAGE_CURRENT) || '[]');
+let history = JSON.parse(localStorage.getItem(STORAGE_HISTORY) || '[]');
+
+const exitForm = document.getElementById('exitForm');
+const studentNameInput = document.getElementById('studentName');
+const exitReasonSelect = document.getElementById('exitReason');
+const currentBody = document.getElementById('currentBody');
+const currentEmpty = document.getElementById('currentEmpty');
+const historyBody = document.getElementById('historyBody');
+const historyEmpty = document.getElementById('historyEmpty');
+const exportBtn = document.getElementById('exportBtn');
+const clearBtn = document.getElementById('clearBtn');
+
+function save() {
+  localStorage.setItem(STORAGE_CURRENT, JSON.stringify(current));
+  localStorage.setItem(STORAGE_HISTORY, JSON.stringify(history));
+}
+
+function formatTime(ts) {
+  return new Date(ts).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDuration(ms) {
+  const totalMinutes = Math.floor(ms / 60000);
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
+  const seconds = Math.floor((ms % 60000) / 1000);
+  if (hours > 0) return `${hours} س ${minutes} د`;
+  if (minutes > 0) return `${minutes} د ${seconds} ث`;
+  return `${seconds} ث`;
+}
+
+function render() {
+  currentBody.innerHTML = '';
+  currentEmpty.style.display = current.length ? 'none' : 'block';
+
+  current.forEach(entry => {
+    const elapsed = Date.now() - entry.outTime;
+    const isOverdue = elapsed > OVERDUE_MINUTES * 60000;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(entry.name)}</td>
+      <td>${escapeHtml(entry.reason)}</td>
+      <td>${formatTime(entry.outTime)}</td>
+      <td class="${isOverdue ? 'overdue' : 'duration'}">${formatDuration(elapsed)}</td>
+      <td><button class="btn-in" data-id="${entry.id}">تسجيل عودة</button></td>
+    `;
+    currentBody.appendChild(tr);
+  });
+
+  historyBody.innerHTML = '';
+  historyEmpty.style.display = history.length ? 'none' : 'block';
+
+  history.slice().reverse().forEach(entry => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(entry.name)}</td>
+      <td>${escapeHtml(entry.reason)}</td>
+      <td>${formatTime(entry.outTime)}</td>
+      <td>${formatTime(entry.inTime)}</td>
+      <td class="duration">${formatDuration(entry.inTime - entry.outTime)}</td>
+    `;
+    historyBody.appendChild(tr);
+  });
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+exitForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const name = studentNameInput.value.trim();
+  if (!name) return;
+  current.push({
+    id: Date.now() + Math.random().toString(36).slice(2),
+    name,
+    reason: exitReasonSelect.value,
+    outTime: Date.now()
+  });
+  studentNameInput.value = '';
+  save();
+  render();
+});
+
+currentBody.addEventListener('click', (e) => {
+  const btn = e.target.closest('button.btn-in');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  const idx = current.findIndex(en => en.id === id);
+  if (idx === -1) return;
+  const entry = current.splice(idx, 1)[0];
+  history.push({ ...entry, inTime: Date.now() });
+  save();
+  render();
+});
+
+clearBtn.addEventListener('click', () => {
+  if (!confirm('هل تريد مسح السجل بالكامل؟')) return;
+  history = [];
+  save();
+  render();
+});
+
+exportBtn.addEventListener('click', () => {
+  const rows = [['الطالب', 'السبب', 'وقت الخروج', 'وقت العودة', 'المدة']];
+  history.forEach(entry => {
+    rows.push([
+      entry.name,
+      entry.reason,
+      new Date(entry.outTime).toLocaleString('ar-EG'),
+      new Date(entry.inTime).toLocaleString('ar-EG'),
+      formatDuration(entry.inTime - entry.outTime)
+    ]);
+  });
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `سجل_خروج_الطلاب_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+render();
+setInterval(render, 1000);
+</script>
+
+</body>
+</html>
